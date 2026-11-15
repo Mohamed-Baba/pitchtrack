@@ -1,0 +1,36 @@
+# Data and detector: COCO-pretrained YOLO26, full frame, no fine-tuning.
+# Paths are relative to the repository root.
+
+data:
+  root: data/SoccerNetGS       # contains train/ valid/ test/ after scripts/download_gsr.py
+  split: valid                 # tune on valid; test is used once, for the final numbers
+  eval_stride: 5               # evaluate detection on one frame in 5 (frames are correlated)
+
+detector:
+  weights: yolo26m.pt          # downloaded by ultralytics on first use
+  imgsz: 1280                  # long side of the network input (960 / 1280 / 1920)
+  conf: 0.01                   # cache low scores; thresholds are chosen offline
+  classes: [0]                 # COCO "person"
+  device: cuda:0
+  half: true
+  batch: 8
+  max_det: 300
+
+tiling:                        # optional
+  enabled: false
+  tile: 640                    # tiles smaller than imgsz are upsampled by the detector
+  overlap: 0.2
+  merge_metric: ios
+  merge_threshold: 0.6
+  full_frame: true
+
+pitch_mask:                    # distance of each detection to the grass (or scripts/add_pitch_distance.py)
+  enabled: false
+  hsv_low: [35, 40, 40]
+  hsv_high: [85, 255, 255]
+  close_px: 25
+  scale: 0.5
+
+eval:
+  iou_threshold: 0.5
+  height_bins: [0, 40, 60, 90, 140, 10000]

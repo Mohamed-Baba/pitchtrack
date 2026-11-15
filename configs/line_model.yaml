@@ -1,0 +1,42 @@
+# Pitch-line network: src/pitchtrack/line_model.py, trained by scripts/train_line_model.py.
+# The network predicts the pitch-line annotation of a frame (the "lines" of SoccerNet-GSR), so the
+# calibration runs on videos that come without annotations.
+
+model:
+  encoder: resnet34          # resnet18 | resnet34 | resnet50 (torchvision)
+  pretrained: true           # ImageNet weights for the encoder (downloaded once by torchvision)
+  input_size: [960, 544]     # network input (w, h), multiples of 32: a 1920 x 1080 frame is halved
+  thickness: 3               # width in pixels of the target lines, at the input size
+
+data:
+  root: data/SoccerNetGS
+  train_split: train         # the network never sees valid (model selection) nor test
+  val_split: valid
+  train_stride: 5            # one frame in 5: consecutive frames are almost identical
+  val_stride: 25             # one frame per second
+
+augment:
+  hflip: 0.5                 # horizontal flip, left <-> right classes swapped
+  zoom: 0.5                  # random crop of 1/s of the frame, s uniform in [1, zoom_max]
+  zoom_max: 1.5
+  colour: 0.8                # hue, saturation, brightness jitter
+  blur: 0.2
+  noise: 0.2
+
+train:
+  epochs: 30
+  batch: 8
+  lr: 3.0e-4                 # AdamW, linear warm-up then cosine decay
+  weight_decay: 1.0e-4
+  dice_weight: 1.0
+  grad_clip: 1.0
+  workers: 6                 # DataLoader processes (0 = in the main process)
+  device: cuda:0
+  tolerance_px: 2            # tolerance of the validation F1, pixels at the input size
+
+postprocess:                 # label map -> annotation (line_annotations.label_map_to_lines)
+  min_conf: 0.5
+  min_pixels: 30
+  max_points: 40
+  max_run: 8
+  line_tol_px: 3.0

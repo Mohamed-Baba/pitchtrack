@@ -1,0 +1,32 @@
+# Tracker: Kalman filter on boxes, two-stage association (ByteTrack), camera motion compensation.
+# Thresholds come from the operating curve of the detector (eval_detection.py), the measurement
+# noise from scripts/estimate_noise.py.
+
+tracker:
+  motion: kalman            # kalman | none (IoU with the last box: ablation)
+  two_stage: true           # ByteTrack: second association with low-score detections
+  high_thresh: 0.5          # operating point of the detector
+  low_thresh: 0.1
+  new_track_thresh: 0.6     # at least high_thresh
+  iou_gate_high: 0.2        # stage 1 forbids IoU < 0.2 (ByteTrack's match_thresh 0.8 = 1 - 0.2)
+  iou_gate_low: 0.5         # stage 2 forbids IoU < 0.5
+  maha_gate: 9.4877         # chi-square(4) 95 %; null disables it
+  n_init: 3
+  max_lost_s: 1.0           # ByteTrack keeps 30 frames at 30 fps
+  output: filtered          # filtered | detection
+
+kalman:                     # standard deviations in box heights
+  q_pos: 4.0                # centre acceleration, h / s^2
+  q_size: 1.0
+  r_pos: 0.05               # scripts/estimate_noise.py
+  r_size: 0.05              # scripts/estimate_noise.py
+  v0: 2.0                   # initial velocity, h / s
+
+cmc:                        # camera motion compensation
+  enabled: false
+  scale: 0.5
+  max_corners: 400
+  ransac_px: 3.0
+  min_inliers: 20
+
+pitch_radius: null          # pixels from the grass (pitch mask); null keeps every detection

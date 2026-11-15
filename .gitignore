@@ -1,0 +1,20 @@
+# data and generated files stay out of git
+data/*
+!data/README.md
+datasets/
+outputs/
+runs/
+models/
+*.pt
+*.onnx
+*.engine
+*.parquet
+*.mp4
+*.avi
+
+# python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/

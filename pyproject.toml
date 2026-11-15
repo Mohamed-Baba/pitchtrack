@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pitchtrack"
+version = "0.2.0"
+description = "Detection, tracking, pitch calibration and statistics of football players in broadcast video, written from scratch."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+# torch and torchvision are NOT listed: install the build that supports your GPU first (README).
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "pyarrow>=14",
+    "opencv-python>=4.9",
+    "pyyaml>=6",
+    "matplotlib>=3.8",
+    "tabulate>=0.9",
+]
+
+[project.optional-dependencies]
+detector = ["ultralytics>=8.4"]          # YOLO26 weights need ultralytics 8.4 or newer (AGPL-3.0)
+data = ["SoccerNet>=0.2"]                # downloads SoccerNet-GSR from Hugging Face
+dev = ["pytest>=8", "pycocotools>=2.0.7"]
+track = ["trackeval>=1.3", "lap>=0.5.12"]  # reference HOTA (TrackEval) and the ByteTrack of Ultralytics (lap)
+video = ["gdown>=5"]                       # download of the sample clips (scripts/download_sample_video.py)
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
