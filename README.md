@@ -71,8 +71,10 @@ so it can drive a live display; the teams are then refitted on the whole video f
 
 Training frames: one in five of the train split, with a horizontal flip that swaps the left and
 right classes, random zooms and colour jitter. Model selection on valid with the F1 of the
-predicted lines at a 2-pixel tolerance. The decisive evaluation is the calibration it gives,
-compared with the calibration from the annotated lines:
+predicted lines at a 2-pixel tolerance. The 30 epochs of `configs/line_model.yaml` take about
+two hours on a laptop RTX 5070 Ti; the best epoch was the 11th (F1 0.966), after which the
+validation loss rises, so about 15 epochs are enough. The decisive evaluation is the calibration
+it gives, compared with the calibration from the annotated lines:
 
     python scripts/calibrate.py --split valid --out outputs/calib/valid.parquet
     python scripts/calibrate.py --split valid --line-model models/pitch_lines.pt --out outputs/calib/valid_model.parquet
@@ -94,18 +96,23 @@ Detection:
 Tracking:
 
     python scripts/run_detector.py --split valid --stride 1 --out outputs/det/valid_s1.parquet
-    python scripts/run_tracker.py --dets outputs/det/valid_s1.parquet --cmc --out outputs/trk/v_byte_cmc.parquet
-    python scripts/eval_tracking.py --tracks outputs/trk/v_byte_cmc.parquet
+    python scripts/run_tracker.py --dets outputs/det/valid_s1.parquet --cmc --out outputs/trk/v_kalman_cmc.parquet
+    python scripts/run_tracker.py --dets outputs/det/valid_s1.parquet --out outputs/trk/v_kalman.parquet
+    python scripts/run_tracker.py --dets outputs/det/valid_s1.parquet --motion none --single-stage --out outputs/trk/v_iou.parquet
     python scripts/run_reference_bytetrack.py --dets outputs/det/valid_s1.parquet --out outputs/trk/v_ref.parquet
-    python scripts/id_switches.py --tracks outputs/trk/v_byte_cmc.parquet
+    python scripts/eval_tracking.py --tracks outputs/trk/v_kalman_cmc.parquet
+    python scripts/id_switches.py --tracks outputs/trk/v_kalman_cmc.parquet
+
+`eval_tracking.py` runs the same way on the other three tables.
 
 Teams, pitch and statistics:
 
-    python scripts/run_teams.py --tracks outputs/trk/v_byte_cmc.parquet --out outputs/teams/valid.parquet
+    python scripts/run_teams.py --tracks outputs/trk/v_kalman_cmc.parquet --out outputs/teams/valid.parquet
     python scripts/eval_teams.py --teams outputs/teams/valid.parquet
     python scripts/calibrate.py --split valid --dets outputs/det/valid_s1.parquet --out outputs/calib/valid.parquet
     python scripts/eval_calibration.py --calib outputs/calib/valid.parquet
-    python scripts/run_statistics.py --tracks outputs/trk/v_byte_cmc.parquet --calib outputs/calib/valid.parquet --teams outputs/teams/valid.parquet --out outputs/stats/valid
+    python scripts/run_statistics.py --tracks outputs/trk/v_kalman_cmc.parquet --calib outputs/calib/valid.parquet --teams outputs/teams/valid.parquet --out outputs/stats/valid
+    python scripts/run_statistics.py --oracle --calib outputs/calib/valid.parquet --out outputs/stats/valid_oracle
     python scripts/eval_statistics.py --positions outputs/stats/valid_oracle/positions.parquet
     python scripts/make_final_video.py --clip SNGS-XXX --stats outputs/stats/valid --calib outputs/calib/valid.parquet --out outputs/final.mp4
 
@@ -113,25 +120,66 @@ Each evaluation writes a markdown report to `reports/`.
 
 ## Results (validation split of SoccerNet-GSR)
 
-| detector | imgsz | AP50 | recall at tau (h < 40 px) | DetA at tau | ms / frame |
-|---|---|---|---|---|---|
-| YOLO26m, COCO | 1280 | | | | |
+58 clips of 30 s (the line network was trained on the train split); laptop RTX 5070 Ti. The
+full reports are in `reports/`.
 
-| tracker (same detections) | HOTA | DetA | AssA | IDF1 | IDSW |
-|---|---|---|---|---|---|
-| IoU only | | | | | |
-| Kalman + IoU, two stages, camera motion | | | | | |
-| ByteTrack (Ultralytics, reference) | | | | | |
+| detector | imgsz | AP50 | AP@[.5:.95] | precision / recall at τ = 0.5 | DetA at τ | recall, boxes under 40 px | ms / frame |
+|---|---|---|---|---|---|---|---|
+| YOLO26m (COCO, not fine-tuned) | 1280 | 0.839 | 0.469 | 0.920 / 0.848 | 0.790 | 0.043 | 15.9 |
 
-| pitch lines | frames calibrated (from their lines / propagated) | median position error (m), true boxes |
+One frame in five (8,700 frames, 149,771 boxes); τ maximises DetA; boxes under 40 px tall are
+7 % of the ground truth.
+
+| tracker (same detections) | HOTA [95 % CI] | DetA | AssA | IDF1 | IDSW |
+|---|---|---|---|---|---|
+| IoU only | 0.514 [0.494, 0.535] | 0.636 | 0.416 | 0.577 | 4,587 |
+| Kalman + IoU, two stages | 0.550 [0.533, 0.569] | 0.634 | 0.478 | 0.639 | 2,529 |
+| **Kalman + IoU, two stages, camera motion** | **0.578 [0.562, 0.594]** | **0.645** | **0.518** | **0.675** | **2,007** |
+| same, with a 95 % Mahalanobis gate | 0.389 [0.367, 0.411] | 0.615 | 0.249 | 0.395 | 27,099 |
+| ByteTrack (Ultralytics, reference) | 0.539 [0.522, 0.557] | 0.638 | 0.457 | 0.618 | 3,012 |
+
+Every frame (43,500), detections with a score of at least 0.1; intervals by resampling clips;
+tracking alone takes about 1 ms per frame. The gated row (`reports/tracking_v_byte_cmc.md`) used
+`maha_gate: 9.4877` in `configs/tracker.yaml`.
+
+| pitch lines | frames calibrated (from their lines + propagated) | median position error (m), true boxes |
 |---|---|---|
-| annotated (SoccerNet-GSR) | | |
-| predicted by the line network | | |
+| annotated (SoccerNet-GSR) | 68.2 % (49.1 + 19.1) | 0.47 [0.44, 0.51] |
+| predicted by the line network | 84.5 % (65.1 + 19.4) | 0.54 |
+
+The error is the distance between the projected foot point of each ground-truth box and its
+annotated position, over every player the calibration reaches. The network was selected on this
+split (line F1 0.966 at a 2-pixel tolerance), so its row is slightly optimistic; `test` is kept
+for a single final run.
 
 | teams and statistics | value |
 |---|---|
-| team macro-F1 per track (unknown = error), own tracks | |
-| reliable tracks, median distance per minute (m) | |
+| team macro-F1 per track (unknown = error), own tracks | 0.917 [0.910, 0.925]: 87.9 % of the tracks named, 98.1 % of them right |
+| reliable tracks, median distance per minute (m) | 132 for each team |
+| distance bias against the annotated positions, true boxes | +6.5 % (+60 % without smoothing and step) |
+
+What the numbers say:
+
+- **A 95 % Mahalanobis gate wrecked the tracker.** By construction it rejects about 5 % of the
+  true matches at each frame (5.5 % measured on the sample clip), so at 25 frames per second most tracks lose their
+  match at least once per second (1 − 0.95²⁵ ≈ 72 %), and each rejected detection started a new
+  track that took over. Without the gate (IoU gating only, like ByteTrack), HOTA goes from 0.389
+  to 0.578 and the identity switches from 27,099 to 2,007. On the sample clip, with the same
+  YOLO26n detections: 181 identities with the gate, 40 without, 60 for the Ultralytics ByteTrack. Even a
+  99.9 % gate leaves 93: real errors (occlusions, poses) have heavier tails than the Gaussian
+  model.
+- **Camera motion compensation** adds 0.028 HOTA and removes a fifth of the identity switches.
+- **The line network calibrates more frames than the annotations** (84.5 % against 68.2 %) for
+  7 cm more median error, and it is what lets the pipeline run on any video.
+- **Detection** finds 88 to 97 % of the players taller than 60 px, but 4 % of those under 40 px:
+  the next gain is there (fine-tuning on the train split with `scripts/export_yolo.py`, or tiles).
+- **Distances**: the position noise (11 cm, against 1.5 cm for the annotated positions) would
+  inflate the distances by 60 %; smoothing over 0.4 s and summing every 0.2 s brings the bias
+  to +6.5 %.
+
+On the sample clip (a Bundesliga broadcast, a source the line network never saw): every frame
+calibrated, 88 % from its own lines; 34 tracks for about 24 people on screen; 7.6 frames per
+second with the line network on every frame, 21 without it.
 
 ## Repository layout
 
@@ -183,6 +231,10 @@ at the centre spot, x towards the right goal, y towards the near touch line. See
   re-identification. The ball is not tracked.
 - Teams come from k-means on the colours of one video: referees and goalkeepers usually end up
   "unknown".
+- The detector is not fine-tuned for football: it misses most players under 40 px tall.
+- On a new video there is no ground truth for the positions. On the sample clip the top speeds
+  reach 11 m/s, above what footballers reach (about 10 m/s): a sign of residual noise in the
+  positions from the predicted lines.
 
 ## Licences
 

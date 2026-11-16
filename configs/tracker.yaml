@@ -10,7 +10,9 @@ tracker:
   new_track_thresh: 0.6     # at least high_thresh
   iou_gate_high: 0.2        # stage 1 forbids IoU < 0.2 (ByteTrack's match_thresh 0.8 = 1 - 0.2)
   iou_gate_low: 0.5         # stage 2 forbids IoU < 0.5
-  maha_gate: 9.4877         # chi-square(4) 95 %; null disables it
+  maha_gate: null           # no Mahalanobis gate (9.4877 = chi-square(4) 95 % enables it): a 95 %
+                            # gate rejects ~5 % of true matches per frame, so most tracks at least
+                            # once per second at 25 fps, and every rejection started a new identity
   n_init: 3
   max_lost_s: 1.0           # ByteTrack keeps 30 frames at 30 fps
   output: filtered          # filtered | detection
